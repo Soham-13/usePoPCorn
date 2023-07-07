@@ -1,19 +1,65 @@
 import "./index.css";
 import Star from "./Star.js";
-import { useEffect, useRef, useState } from "react";
-import { useMovie } from "./useMovie";
-import { useLocalStorage } from "./useLocalStorage";
-import { useRemoveSelectedMovie } from "./useEscapeKey";
+import { useEffect, useState } from "react";
+
+const tempMovieData = [
+  {
+    imdbID: "tt1375666",
+    Title: "Inception",
+    Year: "2010",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+  },
+  {
+    imdbID: "tt0133093",
+    Title: "The Matrix",
+    Year: "1999",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BNzQzOTk3OTAtNDQ0Zi00ZTVkLWI0MTEtMDllZjNkYzNjNTc4L2ltYWdlXkEyXkFqcGdeQXVyNjU0OTQ0OTY@._V1_SX300.jpg",
+  },
+  {
+    imdbID: "tt6751668",
+    Title: "Parasite",
+    Year: "2019",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BYWZjMjk3ZTItODQ2ZC00NTY5LWE0ZDYtZTI3MjcwN2Q5NTVkXkEyXkFqcGdeQXVyODk4OTc3MTY@._V1_SX300.jpg",
+  },
+];
+
+const tempWatchedData = [
+  {
+    imdbID: "tt1375666",
+    Title: "Inception",
+    Year: "2010",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BMjAxMzY3NjcxNF5BMl5BanBnXkFtZTcwNTI5OTM0Mw@@._V1_SX300.jpg",
+    runtime: 148,
+    imdbRating: 8.8,
+    userRating: 10,
+  },
+  {
+    imdbID: "tt0088763",
+    Title: "Back to the Future",
+    Year: "1985",
+    Poster:
+      "https://m.media-amazon.com/images/M/MV5BZmU0M2Y1OGUtZjIxNi00ZjBkLTg1MjgtOWIyNThiZWIwYjRiXkEyXkFqcGdeQXVyMTQxNzMzNDI@._V1_SX300.jpg",
+    runtime: 116,
+    imdbRating: 8.5,
+    userRating: 9,
+  },
+];
 
 const average = (arr) =>
   arr.reduce((acc, cur, i, arr) => acc + cur / arr.length, 0);
 
 const KEY = "7656e3b8";
 export default function App() {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState("Inception");
+  const [movies, setMovies] = useState([]);
+  const [watched, setWatched] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errMessage, setErrMessage] = useState("");
   const [selectedMovieid, setSelectedMovie] = useState(null);
-  const [watched, setWatched] = useLocalStorage([], "watched");
-  const { movies, isLoading, errMessage } = useMovie(query, handleCloseMovie);
 
   function handleSelectedMovie(id) {
     setSelectedMovie((selectedMovieid) => (id === selectedMovieid ? null : id));
@@ -26,7 +72,6 @@ export default function App() {
   function handlewatchedmovie(newmovie) {
     if (watched.some((movie) => movie.imdbID === newmovie.imdbID)) return true;
     setWatched((watched) => [...watched, newmovie]);
-
     return false;
   }
 
@@ -36,14 +81,54 @@ export default function App() {
     handleCloseMovie();
   }
 
+  useEffect(
+    function () {
+      const controller = new AbortController();
+      async function fetchMovies() {
+        try {
+          setIsLoading(true);
+          setErrMessage("");
+          const res = await fetch(
+            `http://www.omdbapi.com/?apikey=${KEY}&s=${query}`,
+            { signal: controller.signal }
+          );
+          if (!res.ok) {
+            throw new Error(
+              "Something Went Wrong! Please Check Your Connection."
+            );
+          }
+
+          const data = await res.json();
+          if (data.Response === "False") throw new Error(data.Error);
+          setMovies(data.Search);
+        } catch (err) {
+          if (err.name !== "AbortError")
+            setErrMessage(
+              err.message === "Incorrect IMDb ID."
+                ? "Search Movies... 🎥"
+                : err.message
+            );
+        } finally {
+          setIsLoading(false);
+        }
+      }
+      if (query.length < 3) {
+        setErrMessage("");
+        setMovies([]);
+        return;
+      }
+      fetchMovies();
+      return function () {
+        controller.abort();
+      };
+    },
+    [query]
+  );
+
   return (
     <>
       <Navbar>
-        <SearchBar
-          query={query}
-          setQuery={setQuery}
-          setSelectedMovie={setSelectedMovie}
-        />
+        <SearchBar query={query} setQuery={setQuery} />
         <Result movies={movies} />
       </Navbar>
       <Main>
@@ -96,27 +181,7 @@ function Navbar({ children }) {
     </nav>
   );
 }
-function SearchBar({ query, setQuery, setSelectedMovie }) {
-  const searchtext = useRef(null);
-
-  useEffect(
-    function () {
-      function callback(e) {
-        if (document.activeElement === searchtext.current) return;
-        if (e.code === "Enter") {
-          if (!searchtext.current) return;
-          searchtext.current.focus();
-          setQuery("");
-          setSelectedMovie(null);
-        }
-      }
-
-      document.addEventListener("keydown", callback);
-      return () => document.addEventListener("keydown", callback);
-    },
-    [setQuery, setSelectedMovie]
-  );
-
+function SearchBar({ query, setQuery }) {
   return (
     <input
       className="search"
@@ -124,7 +189,6 @@ function SearchBar({ query, setQuery, setSelectedMovie }) {
       placeholder="Search movies..."
       value={query}
       onChange={(e) => setQuery(e.target.value)}
-      ref={searchtext}
     />
   );
 }
@@ -272,10 +336,8 @@ function DisplaySelectedMovie({
   const [movieSelected, setMovieSelected] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState("");
-  const countRef = useRef(0);
-  useRemoveSelectedMovie(handleCloseMovie, "Escape");
-
   const isWatched = watched.some((movie) => movie.imdbID === selectedMovieid);
+
   const {
     Title: title,
     Year: year,
@@ -298,20 +360,12 @@ function DisplaySelectedMovie({
       runtime: +runtime.split(" ").at(0) ? +runtime.split(" ").at(0) : 0,
       imdbRating: +imdbRating ? +imdbRating : 0,
       userRating,
-      countRatingDecesion: countRef.current,
     };
 
     if (handlewatchedmovie(newmovie))
       alert("The movie is already in the Watchlist!");
     handleCloseMovie();
   }
-
-  useEffect(
-    function () {
-      if (userRating) countRef.current++;
-    },
-    [userRating]
-  );
 
   useEffect(
     function () {
@@ -344,6 +398,19 @@ function DisplaySelectedMovie({
     [title]
   );
 
+  useEffect(
+    function () {
+      function terminateescapekey(e) {
+        if (e.code === "Escape") handleCloseMovie();
+      }
+      document.addEventListener("keydown", terminateescapekey);
+
+      return function () {
+        document.removeEventListener("keydown", terminateescapekey);
+      };
+    },
+    [handleCloseMovie]
+  );
   return (
     <div className="details">
       {isLoading ? (
@@ -381,9 +448,9 @@ function DisplaySelectedMovie({
               </>
             ) : (
               <>
-                {/* <p className="rating">
-                  {`You Rated this Movie ${afterrating}/10 ⭐`}
-                </p> */}
+                <p className="rating">
+                  You Rated this Movie {userRating}/10 ⭐
+                </p>
                 <button
                   className="btn-remove"
                   onClick={() => handleremovemovie(selectedMovieid)}
